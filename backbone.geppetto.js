@@ -1,4 +1,4 @@
-// Backbone.Geppetto v0.2.0
+// Backbone.Geppetto v0.4
 //
 // Copyright (C) 2012 Model N, Inc.  
 // Distributed under the MIT License
@@ -10,10 +10,10 @@ define( [
     "jquery",
     "underscore",
     "backbone",
-    "eventbinder",
-    "wreqr",
     "marionette"
-], function ( $, _, Backbone, EventBinder, Wreqr, Marionette ) {
+], function ( $, _, Backbone, Marionette ) {
+
+    "use strict";
 
     Backbone.Marionette.Geppetto = (function ( Backbone, _, $ ) {
 
@@ -26,20 +26,14 @@ define( [
         Geppetto.Context = function Context( options ) {
 
             this.options = options || {};
-
             this.parentContext = this.options.parentContext;
-            
-            this.vent = new Backbone.EventBinder();
-
-            _.extend(this.vent, Backbone.Events);
-
+            this.vent = {};
+            Marionette.addEventBinder(this.vent);
             this.initialize && this.initialize();
-
-            this.id = _.uniqueId("Context");
-
-            contexts[this.id] = this;
+            this._contextId = _.uniqueId("Context");
+            contexts[this._contextId] = this;
         };
-        
+
         Geppetto.bindContext = function bindContext( options ) {
 
             this.options = options || {};
@@ -57,15 +51,28 @@ define( [
                 // todo: might already be taken care of by marionette...
                 view.off("close");
 
-
                 context.unmapAll();
             });
 
             view.context = context;
+
+            return context;
         };
 
-        Geppetto.Context.prototype.listen = function listen( eventName, callback ) {
-            this.vent.bindTo( this.vent, eventName, callback );
+        Geppetto.Context.prototype.listen = function listen( target, eventName, callback ) {
+
+            if (arguments.length !== 3) {
+                throw "Geppetto.Context.listen(): Expected 3 arguments (target, eventName, callback)";
+            }
+
+            var viewId;
+
+            if (!target.listenTo || !target.stopListening) {
+                throw new Error("Target for listen() must define a 'listenTo' and 'stopListening' function");
+            }
+
+            return target.listenTo( this.vent, eventName, callback, target );
+
         };
 
         Geppetto.Context.prototype.dispatch = function dispatch( eventName, eventData ) {
@@ -87,7 +94,7 @@ define( [
 
         Geppetto.Context.prototype.mapCommand = function mapCommand( eventName, commandClass ) {
 
-            this.vent.bindTo( this.vent, eventName, function ( eventData ) {
+            this.vent.listenTo( this.vent, eventName, function ( eventData ) {
 
                 var commandInstance = new commandClass();
 
@@ -101,17 +108,15 @@ define( [
 
         Geppetto.Context.prototype.unmapAll = function unmapAll() {
 
-            this.vent.unbindAll();
+            this.vent.stopListening();
 
-            delete contexts[this.id];
+            delete contexts[this._contextId];
 
             this.dispatchToParent(Geppetto.EVENT_CONTEXT_SHUTDOWN);
         };
 
         var extend = Backbone.View.extend;
         Geppetto.Context.extend = extend;
-
-        var contexts = {};
 
         var debug = {
 
@@ -123,7 +128,7 @@ define( [
 
                 _.each(contexts, function(context, id) {
                     if (contexts.hasOwnProperty(id)) {
-                        numEvents += _.size(context.vent._callbacks);
+                        numEvents += _.size(context.vent._events);
                     }
                 });
 
